@@ -1,6 +1,7 @@
 import 'server-only';
 import { randomBytes, createHash } from 'node:crypto';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 
 export { hashPassword, verifyPassword } from '@/lib/password';
@@ -29,7 +30,12 @@ export async function createSession(userId: string): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    // Tied to actually running on Vercel (HTTPS), not NODE_ENV — `next start`
+    // sets NODE_ENV=production even when serving plain http://localhost for
+    // local testing, and a Secure cookie over HTTP is silently dropped by
+    // every browser, making local production-build testing look like a
+    // broken login with no visible error.
+    secure: !!process.env.VERCEL,
     sameSite: 'lax',
     expires: expiresAt,
     path: '/',
@@ -63,4 +69,16 @@ export async function getCurrentUser() {
   }
 
   return session.user;
+}
+
+// For server actions and pages that must not proceed without a real,
+// validated session — the proxy/middleware only checks cookie presence
+// (it can't reach Prisma from the Edge runtime), so every server action that
+// mutates data calls this first as the actual authorization check.
+export async function requireUser() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect('/login');
+  }
+  return user;
 }
