@@ -15,6 +15,19 @@ function formatDateKey(key: string): string {
   return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
+const headerStyle: React.CSSProperties = {
+  background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+  color: '#ffffff',
+};
+const cellStyle: React.CSSProperties = { padding: '4px 8px' };
+
+// This whole card is captured by html2canvas (individually for the ZIP
+// download, and as part of the page for the combined PDF) — deliberately
+// plain inline styles/hex colors throughout, no Tailwind color utility
+// classes. Tailwind v4's default palette is defined in oklch, which
+// html2canvas's CSS color parser can't read (throws "unsupported color
+// function" and aborts the whole capture); caught live while testing the
+// export. See lib/pdf-export.ts for the full explanation.
 export function RetailerCard({ retailer, serialNo, dateColumns, summarized, inr }: Props) {
   const rows: { label: string; quantity: number; rate: number; total: number }[] = [];
 
@@ -50,61 +63,74 @@ export function RetailerCard({ retailer, serialNo, dateColumns, summarized, inr 
   }
 
   return (
-    <div className="border border-slate-800 rounded-lg overflow-hidden bg-white text-black text-sm">
-      <table className="w-full">
+    <div
+      data-retailer-card={retailer.customerId}
+      data-retailer-name={retailer.name}
+      style={{
+        border: '1px solid #cbd5e1',
+        borderRadius: 8,
+        overflow: 'hidden',
+        background: '#ffffff',
+        color: '#000000',
+        fontSize: 13,
+      }}
+    >
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <th
-              colSpan={4}
-              className="text-left px-2 py-1.5 text-white font-bold"
-              style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' }}
-            >
+            <th colSpan={4} style={{ ...headerStyle, textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>
               {serialNo}. {retailer.name}
             </th>
           </tr>
-          <tr style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' }}>
-            <th className="text-left px-2 py-1 text-white text-xs font-medium w-1/4">Date</th>
-            <th className="text-left px-2 py-1 text-white text-xs font-medium w-1/4">Qty</th>
-            <th className="text-left px-2 py-1 text-white text-xs font-medium w-1/4">Rate</th>
-            <th className="text-left px-2 py-1 text-white text-xs font-medium w-1/4">Total</th>
+          <tr style={headerStyle}>
+            <th style={{ ...cellStyle, textAlign: 'left', fontSize: 11, fontWeight: 500, width: '25%' }}>
+              Date
+            </th>
+            <th style={{ ...cellStyle, textAlign: 'left', fontSize: 11, fontWeight: 500, width: '25%' }}>
+              Qty
+            </th>
+            <th style={{ ...cellStyle, textAlign: 'left', fontSize: 11, fontWeight: 500, width: '25%' }}>
+              Rate
+            </th>
+            <th style={{ ...cellStyle, textAlign: 'left', fontSize: 11, fontWeight: 500, width: '25%' }}>
+              Total
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={4} className="text-center text-slate-500 py-2">
+              <td colSpan={4} style={{ textAlign: 'center', color: '#64748b', padding: '8px 0' }}>
                 No entries
               </td>
             </tr>
           ) : (
             rows.map((row, i) => (
-              <tr key={i} className="border-t border-slate-200">
-                <td className="px-2 py-1">{row.label}</td>
-                <td className="px-2 py-1">{row.quantity}</td>
-                <td className="px-2 py-1">{Math.round(row.rate)}</td>
-                <td className="px-2 py-1">{inr(row.total)}</td>
+              <tr key={i} style={{ borderTop: '1px solid #e2e8f0' }}>
+                <td style={cellStyle}>{row.label}</td>
+                <td style={cellStyle}>{row.quantity}</td>
+                <td style={cellStyle}>{Math.round(row.rate)}</td>
+                <td style={cellStyle}>{inr(row.total)}</td>
               </tr>
             ))
           )}
-          <tr className="bg-slate-100 font-semibold border-t border-slate-300">
-            <td colSpan={3} className="px-2 py-1">
+          <tr style={{ background: '#f1f5f9', fontWeight: 600, borderTop: '1px solid #cbd5e1' }}>
+            <td colSpan={3} style={cellStyle}>
               Current Mandi Total
             </td>
-            <td className="px-2 py-1">{inr(retailer.weeklyTotal)}</td>
+            <td style={cellStyle}>{inr(retailer.weeklyTotal)}</td>
           </tr>
-          <tr className="bg-slate-100 font-semibold">
-            <td colSpan={3} className="px-2 py-1">
+          <tr style={{ background: '#f1f5f9', fontWeight: 600 }}>
+            <td colSpan={3} style={cellStyle}>
               Previous Balance
             </td>
-            <td className="px-2 py-1">{inr(retailer.displayPreviousBalance)}</td>
+            <td style={cellStyle}>{inr(retailer.displayPreviousBalance)}</td>
           </tr>
-          <tr className="font-bold" style={{ background: '#d4edda' }}>
-            <td colSpan={3} className="px-2 py-1">
+          <tr style={{ background: '#d4edda', fontWeight: 700 }}>
+            <td colSpan={3} style={cellStyle}>
               New Balance
             </td>
-            <td className="px-2 py-1" style={{ color: '#155724' }}>
-              {inr(retailer.newBalance)}
-            </td>
+            <td style={{ ...cellStyle, color: '#155724' }}>{inr(retailer.newBalance)}</td>
           </tr>
         </tbody>
       </table>

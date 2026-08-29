@@ -47,7 +47,11 @@ export default async function BillsPage() {
               ) : (
                 bills.map((bill) => (
                   <tr key={bill.id} className="border-b border-slate-800 hover:bg-slate-900/50">
-                    <td className="py-2 px-3 text-white">{bill.billNumber}</td>
+                    <td className="py-2 px-3 text-white">
+                      <Link href={`/bills/${bill.id}`} className="hover:underline">
+                        {bill.billNumber}
+                      </Link>
+                    </td>
                     <td className="py-2 px-3 text-slate-300">{bill.supplier.name}</td>
                     <td className="py-2 px-3 text-slate-400">
                       {bill.date.toLocaleDateString('en-IN')}
@@ -60,7 +64,13 @@ export default async function BillsPage() {
                         minimumFractionDigits: 2,
                       })}
                     </td>
-                    <td className="py-2 px-3 text-right">
+                    <td className="py-2 px-3 text-right whitespace-nowrap">
+                      <Link
+                        href={`/bills/${bill.id}`}
+                        className="text-indigo-400 hover:text-indigo-300 text-xs mr-3"
+                      >
+                        View
+                      </Link>
                       <DeleteBillButton id={bill.id} billNumber={bill.billNumber} />
                     </td>
                   </tr>

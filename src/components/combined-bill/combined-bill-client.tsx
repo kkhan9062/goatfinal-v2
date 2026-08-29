@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { generateCombinedBill, type CombinedBillResult } from '@/lib/actions/combined-bill';
 import { getMandiCycleRange } from '@/lib/balance';
 import { RetailerCard } from '@/components/combined-bill/retailer-card';
+import { exportElementAsPdf, exportElementsAsZip } from '@/lib/pdf-export';
 
 type Supplier = { id: string; name: string };
 
@@ -22,6 +23,9 @@ export function CombinedBillClient({ suppliers }: { suppliers: Supplier[] }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CombinedBillResult | null>(null);
+  const printAreaRef = useRef<HTMLDivElement>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [zipBusy, setZipBusy] = useState<string | null>(null);
 
   function toggleSupplier(id: string) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -51,6 +55,51 @@ export function CombinedBillClient({ suppliers }: { suppliers: Supplier[] }) {
       }
       setResult(res.data);
     });
+  }
+
+  async function handleDownloadPdf() {
+    if (!printAreaRef.current || !result) return;
+    setPdfBusy(true);
+    try {
+      await exportElementAsPdf(
+        printAreaRef.current,
+        `Combined_Bill_${result.startDate}_to_${result.endDate}.pdf`
+      );
+    } catch (err) {
+      console.error('Failed to export combined bill PDF:', err);
+      alert('Could not generate the PDF. Please try again.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  async function handleDownloadZip() {
+    if (!printAreaRef.current || !result) return;
+    const cards = Array.from(
+      printAreaRef.current.querySelectorAll<HTMLElement>('[data-retailer-card]')
+    );
+    if (cards.length === 0) {
+      alert('No bills found to download.');
+      return;
+    }
+
+    const folderName = `Mandi_${result.startDate}_to_${result.endDate}`;
+    const elements = cards.map((el) => {
+      const name = (el.dataset.retailerName || 'retailer_bill').replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_');
+      return { element: el, filename: `${folderName}/${name}.png` };
+    });
+
+    setZipBusy(`0/${elements.length}`);
+    try {
+      await exportElementsAsZip(elements, `${folderName}.zip`, (done, total) =>
+        setZipBusy(`${done}/${total}`)
+      );
+    } catch (err) {
+      console.error('Failed to generate ZIP:', err);
+      alert('Could not generate the ZIP file. Please try again.');
+    } finally {
+      setZipBusy(null);
+    }
   }
 
   return (
@@ -113,25 +162,51 @@ export function CombinedBillClient({ suppliers }: { suppliers: Supplier[] }) {
             {pending ? 'Generating…' : 'Generate Combined Bill'}
           </button>
           {result && (
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-1.5 transition-colors"
-            >
-              🖨️ Print
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-1.5 transition-colors"
+              >
+                🖨️ Print
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={pdfBusy}
+                className="rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-1.5 transition-colors"
+              >
+                {pdfBusy ? 'Generating…' : '📥 Download PDF'}
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadZip}
+                disabled={zipBusy !== null}
+                className="rounded-md bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-1.5 transition-colors"
+              >
+                {zipBusy ? `Zipping ${zipBusy}…` : '📁 Download All as ZIP'}
+              </button>
+            </>
           )}
         </div>
         {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
       </div>
 
       {result && (
-        <div id="combined-bill-print-area">
-          <div className="text-center mb-4">
-            <h2 className="text-lg font-semibold text-indigo-400">
+        // Plain inline styles/hex colors throughout this whole subtree, not
+        // Tailwind color classes — it's captured by html2canvas for both
+        // the PDF and ZIP downloads, and Tailwind v4's oklch-based palette
+        // crashes html2canvas's CSS color parser. See lib/pdf-export.ts.
+        <div
+          id="combined-bill-print-area"
+          ref={printAreaRef}
+          style={{ background: '#ffffff', color: '#000000', padding: 16, borderRadius: 8 }}
+        >
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 600, color: '#4338ca', margin: 0 }}>
               MANDI PERIOD: {result.mandiPeriod === 'tuesday_friday' ? 'Tuesday–Friday' : 'Saturday–Monday'}
             </h2>
-            <div className="text-sm text-slate-400">
+            <div style={{ fontSize: 13, color: '#64748b' }}>
               {new Date(result.startDate).toLocaleDateString('en-IN')} to{' '}
               {new Date(result.endDate).toLocaleDateString('en-IN')} · Suppliers:{' '}
               {result.supplierNames.join(', ')}
@@ -140,9 +215,17 @@ export function CombinedBillClient({ suppliers }: { suppliers: Supplier[] }) {
           {result.retailers.filter(
             (r) => r.weeklyTotal > 0 || r.displayPreviousBalance > 0 || r.paymentAmount > 0
           ).length === 0 ? (
-            <p className="text-center text-slate-500 py-8">No retailer activity in this period.</p>
+            <p style={{ textAlign: 'center', color: '#64748b', padding: '32px 0' }}>
+              No retailer activity in this period.
+            </p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: 12,
+              }}
+            >
               {result.retailers
                 .filter((r) => r.weeklyTotal > 0 || r.displayPreviousBalance > 0 || r.paymentAmount > 0)
                 .map((r, idx) => (
