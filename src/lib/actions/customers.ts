@@ -49,14 +49,26 @@ export async function updateCustomer(id: string, formData: FormData): Promise<Ac
 export async function deleteCustomer(id: string): Promise<ActionResult> {
   await requireUser();
 
-  const [billCount, paymentCount] = await Promise.all([
+  // Every table with a foreign key to Customer must be checked here — an
+  // uncaught FK violation on delete crashes the request instead of showing
+  // a message (this was found live: RetailerBalance checkpoints, written by
+  // Combined Bill generation, weren't checked and caused exactly that crash).
+  const [billCount, paymentCount, balanceCount, pricingCount] = await Promise.all([
     prisma.billLineItem.count({ where: { customerId: id } }),
     prisma.payment.count({ where: { customerId: id } }),
+    prisma.retailerBalance.count({ where: { customerId: id } }),
+    prisma.pricingHistory.count({ where: { customerId: id } }),
   ]);
-  if (billCount > 0 || paymentCount > 0) {
+  if (billCount > 0 || paymentCount > 0 || balanceCount > 0 || pricingCount > 0) {
+    const parts = [
+      billCount > 0 ? `${billCount} bill entr${billCount === 1 ? 'y' : 'ies'}` : null,
+      paymentCount > 0 ? `${paymentCount} payment(s)` : null,
+      balanceCount > 0 ? `${balanceCount} saved balance checkpoint(s)` : null,
+      pricingCount > 0 ? `${pricingCount} pricing history record(s)` : null,
+    ].filter(Boolean);
     return {
       ok: false,
-      error: `Cannot delete — this retailer has ${billCount} bill entr${billCount === 1 ? 'y' : 'ies'} and ${paymentCount} payment(s) on record. Historical financial data can't be deleted.`,
+      error: `Cannot delete — this retailer has ${parts.join(', ')} on record. Historical financial data can't be deleted.`,
     };
   }
 

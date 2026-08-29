@@ -25,6 +25,8 @@ import type { PrismaClient } from '@prisma/client';
 //   it can be unit tested directly — see balance.test.ts.
 // ============================================================================
 
+export type MandiPeriod = 'tuesday_friday' | 'saturday_monday';
+
 export type ResolvedBalance = {
   balance: number;
   checkpointDate: Date | null;
@@ -110,7 +112,7 @@ export async function saveRetailerBalanceCheckpoint(
     customerId: string;
     balanceDate: Date;
     balanceAmount: number;
-    mandiPeriod: 'tuesday_friday' | 'saturday_monday';
+    mandiPeriod: MandiPeriod;
     notes?: string;
     isManual?: boolean;
   }
@@ -140,7 +142,7 @@ export async function saveRetailerBalanceCheckpoint(
 }
 
 /** Tuesday-Friday vs Saturday-Monday mandi cycle, same rule as v1. */
-export function getMandiPeriod(date: Date): 'tuesday_friday' | 'saturday_monday' {
+export function getMandiPeriod(date: Date): MandiPeriod {
   const day = date.getDay(); // 0=Sun..6=Sat
   return day >= 2 && day <= 5 ? 'tuesday_friday' : 'saturday_monday';
 }
