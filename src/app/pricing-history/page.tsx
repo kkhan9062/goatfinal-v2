@@ -22,7 +22,9 @@ export default async function PricingHistoryPage({
   const customers = await prisma.customer.findMany({ orderBy: { name: 'asc' } });
 
   const groups = retailerId ? await getRetailerPricingHistory(retailerId) : [];
-  const inr = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Rates display as whole rupees (₹200, not ₹200.00) — this business always
+  // quotes prices as whole numbers, unlike currency totals elsewhere.
+  const inr = (n: number) => Math.round(n).toLocaleString('en-IN');
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">

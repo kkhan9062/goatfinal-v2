@@ -24,8 +24,11 @@ describe('computePricingSuggestion', () => {
       { rate: 200, date: d('2026-08-01') }, // second-last: +10%
     ]);
     expect(result.trend).toBe('increasing');
-    // averagePrice = 210, |210-220|/220 = 4.5% < 10%, so suggestion stays at last*1.02
-    expect(result.suggestion).toBeCloseTo(220 * 1.02, 2);
+    // averagePrice = 210, |210-220|/220 = 4.5% < 10%, so suggestion stays at
+    // last*1.02 = 224.4, rounded to the nearest whole rupee (this business
+    // never quotes a fractional rate like ₹224.40).
+    expect(result.suggestion).toBe(224);
+    expect(Number.isInteger(result.suggestion)).toBe(true);
   });
 
   it('detects a decreasing trend (>5% down) and nudges the suggestion down 2%', () => {
@@ -34,7 +37,8 @@ describe('computePricingSuggestion', () => {
       { rate: 200, date: d('2026-08-01') }, // -10%
     ]);
     expect(result.trend).toBe('decreasing');
-    expect(result.suggestion).toBeCloseTo(180 * 0.98, 2);
+    // 180 * 0.98 = 176.4, rounded to the nearest whole rupee.
+    expect(result.suggestion).toBe(176);
   });
 
   it('treats a small change (<=5%) as stable', () => {
@@ -68,5 +72,34 @@ describe('computePricingSuggestion', () => {
     const result = computePricingSuggestion(history);
     // average of last 5 = (500+100+100+100+100)/5 = 180, not diluted by the 3 older 100s
     expect(result.averagePrice).toBe(180);
+  });
+
+  // Regression test: this business always quotes rates as whole rupees
+  // (₹200, ₹150, ₹400) — never a fractional value like ₹234.60 or ₹20.40.
+  // The suggestion must always be a whole number, across every code path
+  // that can produce one (trend nudge, average pull, or plain carry-over).
+  it('always suggests a whole-rupee amount, never a fractional one', () => {
+    const cases: { rate: number; date: Date }[][] = [
+      [{ rate: 233, date: d('2026-08-01') }],
+      [
+        { rate: 233, date: d('2026-08-08') },
+        { rate: 200, date: d('2026-08-01') },
+      ],
+      [
+        { rate: 167, date: d('2026-08-08') },
+        { rate: 200, date: d('2026-08-01') },
+      ],
+      [
+        { rate: 101, date: d('2026-08-05') },
+        { rate: 99, date: d('2026-08-04') },
+        { rate: 301, date: d('2026-08-03') },
+        { rate: 299, date: d('2026-08-02') },
+        { rate: 303, date: d('2026-08-01') },
+      ],
+    ];
+    for (const history of cases) {
+      const result = computePricingSuggestion(history);
+      expect(Number.isInteger(result.suggestion)).toBe(true);
+    }
   });
 });

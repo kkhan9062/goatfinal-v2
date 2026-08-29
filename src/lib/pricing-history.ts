@@ -20,7 +20,10 @@ export type PricingSuggestion = {
   historyCount: number;
 };
 
-const money = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Rates display as whole rupees (₹200, not ₹200.00) — matches how this
+// business actually quotes prices; only currency *totals* elsewhere in the
+// app carry paise.
+const money = (n: number) => Math.round(n).toLocaleString('en-IN');
 
 /**
  * `history` must already be sorted most-recent-first (history[0] is the
@@ -68,7 +71,11 @@ export function computePricingSuggestion(history: PricingHistoryEntry[]): Pricin
     suggestion = (lastPrice + averagePrice) / 2;
   }
 
-  suggestion = Math.round(suggestion * 100) / 100;
+  // Rates in this business are always quoted as whole rupees (₹200, ₹150,
+  // ₹400 — never ₹234.60 or ₹20.40), unlike the currency totals elsewhere
+  // in the app which do carry paise. Round to the nearest whole rupee, not
+  // the nearest paisa.
+  suggestion = Math.round(suggestion);
 
   let message =
     trend === 'increasing'

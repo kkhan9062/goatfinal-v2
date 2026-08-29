@@ -146,7 +146,7 @@ export function CashFlowClient({ suppliers }: { suppliers: Supplier[] }) {
                     <tr key={t.id} className="border-t border-slate-800">
                       <td className="py-2 px-3">{new Date(t.date).toLocaleDateString('en-IN')}</td>
                       <td className="py-2 px-3">{t.quantity ?? '—'}</td>
-                      <td className="py-2 px-3">{t.rate?.toFixed(2) ?? '—'}</td>
+                      <td className="py-2 px-3">{t.rate !== null ? Math.round(t.rate) : '—'}</td>
                       <td className="py-2 px-3">{inr(t.amount)}</td>
                       <td className="py-2 px-3 text-slate-400">{t.description ?? '—'}</td>
                       <td className="py-2 px-3 no-print">

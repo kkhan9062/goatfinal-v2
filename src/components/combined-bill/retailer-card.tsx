@@ -81,7 +81,7 @@ export function RetailerCard({ retailer, serialNo, dateColumns, summarized, inr 
               <tr key={i} className="border-t border-slate-200">
                 <td className="px-2 py-1">{row.label}</td>
                 <td className="px-2 py-1">{row.quantity}</td>
-                <td className="px-2 py-1">{row.rate.toFixed(2)}</td>
+                <td className="px-2 py-1">{Math.round(row.rate)}</td>
                 <td className="px-2 py-1">{inr(row.total)}</td>
               </tr>
             ))

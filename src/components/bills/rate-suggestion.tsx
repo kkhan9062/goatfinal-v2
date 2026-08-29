@@ -45,9 +45,9 @@ export function RateSuggestion({
   return (
     <div className="mt-1 flex items-center gap-1.5 text-xs text-indigo-300 whitespace-nowrap">
       <span>
-        {TREND_ICON[trend]} 🤖 ₹{suggestion.toFixed(2)}
-        {lastPrice !== null && lastPrice !== suggestion && (
-          <span className="text-slate-500"> (last ₹{lastPrice.toFixed(2)})</span>
+        {TREND_ICON[trend]} 🤖 ₹{Math.round(suggestion)}
+        {lastPrice !== null && Math.round(lastPrice) !== suggestion && (
+          <span className="text-slate-500"> (last ₹{Math.round(lastPrice)})</span>
         )}
       </span>
       <button
