@@ -1,19 +1,12 @@
 import 'server-only';
 import { randomBytes, createHash } from 'node:crypto';
-import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 
+export { hashPassword, verifyPassword } from '@/lib/password';
+
 const SESSION_COOKIE = 'session';
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, matches v1's api_keys expiry
-
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12);
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');

@@ -8,7 +8,7 @@
 // Usage: npx tsx scripts/create-admin.ts <username> <password> [email]
 import 'dotenv/config';
 import { prisma } from '../src/lib/prisma';
-import { hashPassword } from '../src/lib/auth';
+import { hashPassword } from '../src/lib/password';
 
 async function main() {
   const [username, password, email] = process.argv.slice(2);
