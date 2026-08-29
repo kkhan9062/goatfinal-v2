@@ -7,6 +7,7 @@ const links = [
   { href: '/customers', label: 'Retailers' },
   { href: '/bills', label: 'Bills' },
   { href: '/combined-bill', label: 'Combined Bill' },
+  { href: '/ledger', label: 'Ledger' },
   { href: '/payments', label: 'Payments' },
 ];
 
