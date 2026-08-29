@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBill } from '@/lib/actions/bills';
+import { RateSuggestion } from '@/components/bills/rate-suggestion';
 
 type Customer = { id: string; name: string };
 type Supplier = { id: string; name: string };
@@ -218,6 +219,11 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
                           value={row.rate}
                           onChange={(e) => updateRow(key, row.key, { rate: e.target.value })}
                           className="rounded-md bg-slate-800 border border-slate-700 px-2 py-1 text-white text-sm w-24"
+                        />
+                        <RateSuggestion
+                          customerId={row.customerId}
+                          organ={key}
+                          onApply={(rate) => updateRow(key, row.key, { rate: String(rate) })}
                         />
                       </td>
                       <td className="px-4 py-1.5 text-slate-300">

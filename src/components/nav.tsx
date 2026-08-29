@@ -9,6 +9,7 @@ const links = [
   { href: '/combined-bill', label: 'Combined Bill' },
   { href: '/ledger', label: 'Ledger' },
   { href: '/cash-flow', label: 'Cash Flow' },
+  { href: '/pricing-history', label: 'Pricing' },
   { href: '/payments', label: 'Payments' },
 ];
 

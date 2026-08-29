@@ -60,7 +60,7 @@ export async function createBill(input: CreateBillInput): Promise<ActionResult &
       const billNumber = await nextBillNumber(tx, billDate);
       const grandTotal = lineItems.reduce((sum, item) => sum + item.quantity * item.rate, 0);
 
-      return tx.bill.create({
+      const created = await tx.bill.create({
         data: {
           billNumber,
           supplierId,
@@ -80,6 +80,22 @@ export async function createBill(input: CreateBillInput): Promise<ActionResult &
           },
         },
       });
+
+      // Feeds the AI pricing suggestion shown on the next bill for this
+      // retailer/organ (see lib/pricing-history.ts) — direct port of v1's
+      // savePricingHistory(), one row per rate actually charged.
+      if (lineItems.length > 0) {
+        await tx.pricingHistory.createMany({
+          data: lineItems.map((item) => ({
+            customerId: item.customerId,
+            organType: item.organ,
+            rate: item.rate,
+            date: billDate,
+          })),
+        });
+      }
+
+      return created;
     });
 
     revalidatePath('/bills');
