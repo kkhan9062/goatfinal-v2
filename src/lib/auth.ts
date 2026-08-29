@@ -1,0 +1,73 @@
+import 'server-only';
+import { randomBytes, createHash } from 'node:crypto';
+import bcrypt from 'bcryptjs';
+import { cookies } from 'next/headers';
+import { prisma } from '@/lib/prisma';
+
+const SESSION_COOKIE = 'session';
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, matches v1's api_keys expiry
+
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+// Creates a new session for a user and sets the httpOnly cookie. The raw token
+// only ever exists in the cookie sent to the browser and in this one return
+// value — the database only stores its SHA-256 hash, mirroring how v1's
+// api_keys table worked, but delivered via a cookie instead of a header the
+// client has to manage itself.
+export async function createSession(userId: string): Promise<void> {
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+
+  await prisma.session.create({
+    data: { userId, tokenHash, expiresAt },
+  });
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    expires: expiresAt,
+    path: '/',
+  });
+}
+
+export async function destroySession(): Promise<void> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (token) {
+    await prisma.session.deleteMany({ where: { tokenHash: hashToken(token) } });
+  }
+  cookieStore.delete(SESSION_COOKIE);
+}
+
+// Returns the logged-in user for the current request, or null. Used by both
+// the middleware (route protection) and server components/route handlers that
+// need to know "who is making this request."
+export async function getCurrentUser() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+
+  const session = await prisma.session.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { user: true },
+  });
+
+  if (!session || session.expiresAt < new Date() || !session.user.isActive) {
+    return null;
+  }
+
+  return session.user;
+}
