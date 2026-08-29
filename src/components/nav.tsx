@@ -31,7 +31,9 @@ export function Nav({ username }: { username: string }) {
           </nav>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-slate-400 text-sm">{username}</span>
+          <Link href="/account" className="text-slate-400 hover:text-white text-sm transition-colors">
+            {username}
+          </Link>
           <LogoutButton />
         </div>
       </div>
