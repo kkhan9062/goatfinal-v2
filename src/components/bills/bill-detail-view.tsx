@@ -87,7 +87,7 @@ export function BillDetailView({
       <div
         ref={printAreaRef}
         id="bill-print-area"
-        style={{ background: '#ffffff', color: '#000000', borderRadius: 8, padding: 24 }}
+        style={{ background: '#ffffff', color: '#000000', borderRadius: 8, padding: 16 }}
       >
         <div style={{ textAlign: 'center', marginBottom: 16 }}>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: '#4338ca', margin: 0 }}>
