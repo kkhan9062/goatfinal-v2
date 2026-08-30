@@ -127,6 +127,12 @@ export default async function BillsPage() {
                               >
                                 View
                               </Link>
+                              <Link
+                                href={`/bills/${bill.id}/edit`}
+                                className="text-amber-400 hover:text-amber-300 text-xs mr-3"
+                              >
+                                Edit
+                              </Link>
                               <DeleteBillButton id={bill.id} billNumber={bill.billNumber} />
                             </td>
                           </tr>

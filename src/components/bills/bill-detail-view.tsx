@@ -18,6 +18,7 @@ type Row = {
 const inr = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function BillDetailView({
+  billId,
   billNumber,
   supplierName,
   date,
@@ -25,6 +26,7 @@ export function BillDetailView({
   grandTotal,
   rows,
 }: {
+  billId: string;
   billNumber: string;
   supplierName: string;
   date: string;
@@ -55,6 +57,12 @@ export function BillDetailView({
           ← Back to Bills
         </Link>
         <div className="flex gap-2">
+          <Link
+            href={`/bills/${billId}/edit`}
+            className="rounded-md bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium px-4 py-1.5 transition-colors"
+          >
+            ✏️ Edit
+          </Link>
           <button
             type="button"
             onClick={() => window.print()}

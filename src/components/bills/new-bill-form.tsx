@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createBill } from '@/lib/actions/bills';
+import { createBill, updateBill } from '@/lib/actions/bills';
 import { RateSuggestion } from '@/components/bills/rate-suggestion';
 
 type Customer = { id: string; name: string };
@@ -38,17 +38,59 @@ function emptyRow(): Row {
   };
 }
 
-export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; customers: Customer[] }) {
+export type ExistingBillForEdit = {
+  id: string;
+  billNumber: string;
+  supplierId: string;
+  date: string; // yyyy-mm-dd
+  totalGoatsReceived: number;
+  lineItems: {
+    organ: OrganKey;
+    customerId: string;
+    quantity: number;
+    rate: number;
+    includesKaleji: boolean;
+    includesVajdi: boolean;
+  }[];
+};
+
+function emptyRowsByOrgan(): Record<OrganKey, Row[]> {
+  return { mundi: [], kaleji: [], paya: [], vajdi: [], gurda: [] };
+}
+
+// v1's editBill (app.js): reopens this same form pre-filled with an
+// existing bill's data — same rows/organs/customers/rates the bill was
+// originally entered with — and resubmitting updates that bill in place
+// (same bill number) instead of creating a new one.
+export function NewBillForm({
+  suppliers,
+  customers,
+  existingBill,
+}: {
+  suppliers: Supplier[];
+  customers: Customer[];
+  existingBill?: ExistingBillForEdit;
+}) {
   const router = useRouter();
-  const [supplierId, setSupplierId] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [totalGoatsReceived, setTotalGoatsReceived] = useState('');
-  const [rowsByOrgan, setRowsByOrgan] = useState<Record<OrganKey, Row[]>>({
-    mundi: [],
-    kaleji: [],
-    paya: [],
-    vajdi: [],
-    gurda: [],
+  const [supplierId, setSupplierId] = useState(existingBill?.supplierId ?? '');
+  const [date, setDate] = useState(() => existingBill?.date ?? new Date().toISOString().slice(0, 10));
+  const [totalGoatsReceived, setTotalGoatsReceived] = useState(() =>
+    existingBill ? String(existingBill.totalGoatsReceived) : ''
+  );
+  const [rowsByOrgan, setRowsByOrgan] = useState<Record<OrganKey, Row[]>>(() => {
+    if (!existingBill) return emptyRowsByOrgan();
+    const rows = emptyRowsByOrgan();
+    for (const li of existingBill.lineItems) {
+      rows[li.organ].push({
+        key: Math.random().toString(36).slice(2),
+        customerId: li.customerId,
+        quantity: String(li.quantity),
+        rate: String(li.rate),
+        includesKaleji: li.includesKaleji,
+        includesVajdi: li.includesVajdi,
+      });
+    }
+    return rows;
   });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -136,17 +178,24 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
     }
 
     startTransition(async () => {
-      const result = await createBill({
-        supplierId,
-        date,
-        totalGoatsReceived: totalGoatsReceived || '0',
-        lineItems,
-      });
+      const result = existingBill
+        ? await updateBill(existingBill.id, {
+            supplierId,
+            date,
+            totalGoatsReceived: totalGoatsReceived || '0',
+            lineItems,
+          })
+        : await createBill({
+            supplierId,
+            date,
+            totalGoatsReceived: totalGoatsReceived || '0',
+            lineItems,
+          });
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      router.push('/bills');
+      router.push(existingBill ? `/bills/${existingBill.id}` : '/bills');
       router.refresh();
     });
   }
@@ -360,7 +409,7 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
         disabled={pending}
         className="w-full rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-medium py-2.5 transition-colors"
       >
-        {pending ? 'Saving…' : '📄 Generate Bill'}
+        {pending ? 'Saving…' : existingBill ? '💾 Update Bill' : '📄 Generate Bill'}
       </button>
     </form>
   );

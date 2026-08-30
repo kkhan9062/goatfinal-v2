@@ -106,6 +106,68 @@ export async function createBill(input: CreateBillInput): Promise<ActionResult &
   }
 }
 
+// Direct port of v1's "✏️ Edit" on the bills list (app.js editBill /
+// data-edit-id / "💾 Update Bill"): reopens the same bill-entry form
+// pre-filled with the existing bill, and resubmitting replaces its line
+// items rather than creating a new bill — same bill number, same id.
+// Line items are wholesale delete+recreate rather than diffed/matched,
+// mirroring how v1's form resubmission worked (whatever rows are on the
+// form when you click Update become the bill's new contents).
+//
+// Note: this does NOT rewrite pricing_history for the old rates — that
+// table has no billId to attribute rows back to a specific bill's edit,
+// and blindly deleting by (customerId, organ, date) risks deleting a
+// different bill's legitimate entry for the same day. Pricing suggestions
+// are advisory, not authoritative, so leaving a stale entry from a
+// corrected rate is an acceptable tradeoff against that data-safety risk.
+export async function updateBill(billId: string, input: CreateBillInput): Promise<ActionResult> {
+  await requireUser();
+
+  const parsed = createBillSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  const { supplierId, date, totalGoatsReceived, lineItems } = parsed.data;
+  const billDate = new Date(date);
+  const grandTotal = lineItems.reduce((sum, item) => sum + item.quantity * item.rate, 0);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.billLineItem.deleteMany({ where: { billId } });
+      await tx.bill.update({
+        where: { id: billId },
+        data: {
+          supplierId,
+          date: billDate,
+          totalGoatsReceived,
+          grandTotal,
+          lineItems: {
+            create: lineItems.map((item) => ({
+              customerId: item.customerId,
+              organ: item.organ,
+              quantity: item.quantity,
+              rate: item.rate,
+              total: item.quantity * item.rate,
+              includesKaleji: item.includesKaleji,
+              includesVajdi: item.includesVajdi,
+            })),
+          },
+        },
+      });
+    });
+
+    revalidatePath('/bills');
+    revalidatePath(`/bills/${billId}`);
+    revalidatePath('/combined-bill');
+    revalidatePath('/ledger');
+    return { ok: true };
+  } catch (err) {
+    console.error('updateBill failed:', err);
+    return { ok: false, error: 'Failed to update bill — please try again.' };
+  }
+}
+
 export async function deleteBill(id: string): Promise<ActionResult> {
   await requireUser();
   // BillLineItems cascade-delete with the bill (onDelete: Cascade in schema)

@@ -42,6 +42,7 @@ export default async function BillDetailPage({ params }: { params: Promise<{ id:
       <Nav username={user.username} />
       <div className="max-w-3xl mx-auto p-8">
         <BillDetailView
+          billId={bill.id}
           billNumber={bill.billNumber}
           supplierName={bill.supplier.name}
           date={bill.date.toISOString()}
