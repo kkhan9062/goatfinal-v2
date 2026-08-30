@@ -1,6 +1,9 @@
 'use client';
 
 import type { CombinedBillRetailer } from '@/lib/actions/combined-bill';
+import { EditEntriesButton } from '@/components/combined-bill/edit-entries-button';
+
+type Customer = { id: string; name: string };
 
 type Props = {
   retailer: CombinedBillRetailer;
@@ -8,6 +11,8 @@ type Props = {
   dateColumns: string[];
   summarized: boolean;
   inr: (n: number) => string;
+  customers: Customer[];
+  onEntriesSaved: () => void;
 };
 
 function formatDateKey(key: string): string {
@@ -28,7 +33,15 @@ const cellStyle: React.CSSProperties = { padding: '4px 8px' };
 // html2canvas's CSS color parser can't read (throws "unsupported color
 // function" and aborts the whole capture); caught live while testing the
 // export. See lib/pdf-export.ts for the full explanation.
-export function RetailerCard({ retailer, serialNo, dateColumns, summarized, inr }: Props) {
+export function RetailerCard({
+  retailer,
+  serialNo,
+  dateColumns,
+  summarized,
+  inr,
+  customers,
+  onEntriesSaved,
+}: Props) {
   const rows: { label: string; quantity: number; rate: number; total: number }[] = [];
 
   if (summarized) {
@@ -63,12 +76,16 @@ export function RetailerCard({ retailer, serialNo, dateColumns, summarized, inr 
   }
 
   return (
-    <div
-      data-retailer-card={retailer.customerId}
-      data-retailer-name={retailer.name}
-      style={{
-        border: '1px solid #cbd5e1',
-        borderRadius: 8,
+    <div>
+      <div data-pdf-ignore className="mb-1">
+        <EditEntriesButton retailer={retailer} customers={customers} onSaved={onEntriesSaved} />
+      </div>
+      <div
+        data-retailer-card={retailer.customerId}
+        data-retailer-name={retailer.name}
+        style={{
+          border: '1px solid #cbd5e1',
+          borderRadius: 8,
         overflow: 'hidden',
         background: '#ffffff',
         color: '#000000',
@@ -134,6 +151,7 @@ export function RetailerCard({ retailer, serialNo, dateColumns, summarized, inr 
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

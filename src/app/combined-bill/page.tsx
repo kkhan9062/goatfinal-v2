@@ -5,7 +5,10 @@ import { CombinedBillClient } from '@/components/combined-bill/combined-bill-cli
 
 export default async function CombinedBillPage() {
   const user = await requireUser();
-  const suppliers = await prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+  const [suppliers, customers] = await Promise.all([
+    prisma.supplier.findMany({ orderBy: { name: 'asc' } }),
+    prisma.customer.findMany({ orderBy: { name: 'asc' } }),
+  ]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -17,7 +20,10 @@ export default async function CombinedBillPage() {
           balance is resolved from each retailer&apos;s saved balance history, and the new closing
           balance is auto-saved for next period.
         </p>
-        <CombinedBillClient suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))} />
+        <CombinedBillClient
+          suppliers={suppliers.map((s) => ({ id: s.id, name: s.name }))}
+          customers={customers.map((c) => ({ id: c.id, name: c.name }))}
+        />
       </div>
     </div>
   );

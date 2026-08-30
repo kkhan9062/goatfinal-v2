@@ -74,6 +74,11 @@ async function captureCanvas(
       backgroundColor: '#ffffff',
       windowWidth: host.scrollWidth,
       windowHeight: host.scrollHeight,
+      // Interactive controls that live inside an otherwise-captured area
+      // (e.g. Combined Bill's "Edit Entries" button on each retailer card)
+      // opt out of the exported PDF/image via this attribute — they're UI
+      // chrome for the live page, not part of the document being printed.
+      ignoreElements: (el) => el.hasAttribute('data-pdf-ignore'),
     });
   } finally {
     host.remove();

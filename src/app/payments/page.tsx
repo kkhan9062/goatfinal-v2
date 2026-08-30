@@ -1,16 +1,39 @@
 import { requireUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { Nav } from '@/components/nav';
-import { AddPaymentForm } from '@/components/payments/add-payment-form';
-import { DeletePaymentButton } from '@/components/payments/delete-payment-button';
+import { PaymentEntry } from '@/components/payments/payment-entry';
+import { PaymentRow } from '@/components/payments/payment-row';
+import { PaymentFilters } from '@/components/payments/payment-filters';
+import type { Prisma } from '@prisma/client';
 
-export default async function PaymentsPage() {
+function toDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export default async function PaymentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string; retailerId?: string; mode?: string }>;
+}) {
   const user = await requireUser();
+  const { from, to, retailerId, mode } = await searchParams;
+
+  const where: Prisma.PaymentWhereInput = {};
+  if (from || to) {
+    where.date = {
+      ...(from ? { gte: new Date(from) } : {}),
+      ...(to ? { lte: new Date(to) } : {}),
+    };
+  }
+  if (retailerId) where.customerId = retailerId;
+  if (mode) where.mode = mode as Prisma.EnumPaymentModeFilter['equals'];
+
   const [payments, customers] = await Promise.all([
     prisma.payment.findMany({
+      where,
       orderBy: { date: 'desc' },
-      include: { customer: { select: { name: true } } },
-      take: 200,
+      include: { customer: { select: { id: true, name: true } } },
+      take: 500,
     }),
     prisma.customer.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
   ]);
@@ -23,8 +46,15 @@ export default async function PaymentsPage() {
         {customers.length === 0 ? (
           <p className="text-slate-400">Add a retailer first before recording payments.</p>
         ) : (
-          <AddPaymentForm customers={customers} />
+          <PaymentEntry customers={customers} />
         )}
+        <PaymentFilters
+          customers={customers}
+          from={from}
+          to={to}
+          retailerId={retailerId}
+          mode={mode}
+        />
         <div className="border border-slate-800 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-left text-slate-400">
@@ -41,23 +71,24 @@ export default async function PaymentsPage() {
               {payments.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-6 text-center text-slate-500">
-                    No payments recorded yet.
+                    No payments found.
                   </td>
                 </tr>
               ) : (
                 payments.map((p) => (
-                  <tr key={p.id} className="border-b border-slate-800 hover:bg-slate-900/50">
-                    <td className="py-2 px-3 text-white">{p.customer.name}</td>
-                    <td className="py-2 px-3 text-slate-400">{p.date.toLocaleDateString('en-IN')}</td>
-                    <td className="py-2 px-3 text-slate-400">{p.mode}</td>
-                    <td className="py-2 px-3 text-slate-400">{p.notes ?? '—'}</td>
-                    <td className="py-2 px-3 text-right text-emerald-400">
-                      ₹{Number(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-2 px-3 text-right">
-                      <DeletePaymentButton id={p.id} />
-                    </td>
-                  </tr>
+                  <PaymentRow
+                    key={p.id}
+                    payment={{
+                      id: p.id,
+                      customerId: p.customerId,
+                      customerName: p.customer.name,
+                      amount: Number(p.amount),
+                      date: toDateKey(p.date),
+                      mode: p.mode,
+                      notes: p.notes,
+                    }}
+                    customers={customers}
+                  />
                 ))
               )}
             </tbody>

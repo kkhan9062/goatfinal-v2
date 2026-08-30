@@ -4,6 +4,7 @@ import { Nav } from '@/components/nav';
 import { getRetailerLedger } from '@/lib/ledger';
 import { LedgerFilters } from '@/components/ledger/ledger-filters';
 import { LedgerView } from '@/components/ledger/ledger-view';
+import { MandiStatementView } from '@/components/ledger/mandi-statement-view';
 
 export default async function LedgerPage({
   searchParams,
@@ -33,6 +34,9 @@ export default async function LedgerPage({
         />
         {retailerId && !ledger && (
           <p className="text-red-400 mt-4">Retailer not found.</p>
+        )}
+        {retailerId && ledger && (
+          <MandiStatementView retailerId={retailerId} from={from} to={to} />
         )}
         {ledger && <LedgerView ledger={ledger} />}
       </div>

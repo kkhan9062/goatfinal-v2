@@ -7,6 +7,7 @@ import { RetailerCard } from '@/components/combined-bill/retailer-card';
 import { exportElementAsPdf, exportElementsAsZip } from '@/lib/pdf-export';
 
 type Supplier = { id: string; name: string };
+type Customer = { id: string; name: string };
 
 const inr = (n: number) =>
   n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -15,8 +16,16 @@ function toDateInputValue(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function CombinedBillClient({ suppliers }: { suppliers: Supplier[] }) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+export function CombinedBillClient({
+  suppliers,
+  customers,
+}: {
+  suppliers: Supplier[];
+  customers: Customer[];
+}) {
+  // All suppliers pre-selected by default, matching v1 — the common case is
+  // "everyone's mandi bill for this period," not picking suppliers one by one.
+  const [selectedIds, setSelectedIds] = useState<string[]>(() => suppliers.map((s) => s.id));
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [summarized, setSummarized] = useState(false);
@@ -236,6 +245,8 @@ export function CombinedBillClient({ suppliers }: { suppliers: Supplier[] }) {
                     dateColumns={result.dateColumns}
                     summarized={summarized}
                     inr={inr}
+                    customers={customers}
+                    onEntriesSaved={handleGenerate}
                   />
                 ))}
             </div>

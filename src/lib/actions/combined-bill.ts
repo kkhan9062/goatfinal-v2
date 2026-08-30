@@ -19,6 +19,7 @@
 //   duplicated), and only for retailers with actual activity this period.
 // ============================================================================
 
+import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireUser } from '@/lib/auth';
 import {
@@ -30,7 +31,22 @@ import {
   type MandiPeriod,
 } from '@/lib/balance';
 
-export type CombinedBillDelivery = { quantity: number; rate: number; total: number };
+export type CombinedBillSource = {
+  lineItemId: string;
+  billId: string;
+  billNumber: string;
+  billDate: string;
+  organ: string;
+  quantity: number;
+  rate: number;
+  total: number;
+};
+export type CombinedBillDelivery = {
+  quantity: number;
+  rate: number;
+  total: number;
+  sources: CombinedBillSource[];
+};
 export type CombinedBillRetailer = {
   customerId: string;
   name: string;
@@ -111,6 +127,7 @@ export async function generateCombinedBill(
     prisma.billLineItem.findMany({
       where: { bill: { supplierId: { in: supplierIds }, date: { gte: start, lte: end } } },
       include: { bill: true, customer: true },
+      orderBy: { bill: { date: 'asc' } },
     }),
   ]);
 
@@ -144,9 +161,19 @@ export async function generateCombinedBill(
 
     byCustomer[custId] ??= {};
     byCustomer[custId][dKey] ??= {};
-    byCustomer[custId][dKey][rateKey] ??= { quantity: 0, rate, total: 0 };
+    byCustomer[custId][dKey][rateKey] ??= { quantity: 0, rate, total: 0, sources: [] };
     byCustomer[custId][dKey][rateKey].quantity += quantity;
     byCustomer[custId][dKey][rateKey].total = byCustomer[custId][dKey][rateKey].quantity * rate;
+    byCustomer[custId][dKey][rateKey].sources.push({
+      lineItemId: li.id,
+      billId: li.billId,
+      billNumber: li.bill.billNumber,
+      billDate: dKey,
+      organ: li.organ,
+      quantity,
+      rate,
+      total: quantity * rate,
+    });
   }
 
   const customerIds = Object.keys(byCustomer);
@@ -225,4 +252,70 @@ export async function generateCombinedBill(
       supplierNames: suppliers.map((s) => s.name),
     },
   };
+}
+
+export type UpdateEntryResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Direct equivalent of v1's "Edit Entries" modal on a Combined Bill retailer
+ * card (saveCombinedEntryEdit in combined-bill-module.js): correct a single
+ * bill line item's quantity/rate, optionally reassigning it to a different
+ * retailer if it was entered under the wrong person.
+ *
+ * Dramatically simpler than v1 here because the schema stores individual
+ * BillLineItem rows instead of a JSON distribution blob — no need to parse,
+ * locate, and re-serialize a bill's whole JSON to change one entry. Both the
+ * line item update and the bill's recomputed grandTotal happen in one
+ * transaction, so the bill total can never end up out of sync with its
+ * lines even if this is interrupted mid-write.
+ */
+export async function updateCombinedBillEntry(
+  lineItemId: string,
+  quantity: number,
+  rate: number,
+  newCustomerId?: string
+): Promise<UpdateEntryResult> {
+  await requireUser();
+
+  if (!(quantity > 0) || !(rate > 0)) {
+    return { ok: false, error: 'Quantity and rate must both be greater than 0.' };
+  }
+
+  const lineItem = await prisma.billLineItem.findUnique({ where: { id: lineItemId } });
+  if (!lineItem) {
+    return { ok: false, error: 'This entry no longer exists — it may have been deleted.' };
+  }
+
+  if (newCustomerId) {
+    const newCustomer = await prisma.customer.findUnique({ where: { id: newCustomerId } });
+    if (!newCustomer) {
+      return { ok: false, error: 'Selected retailer not found.' };
+    }
+  }
+
+  const total = quantity * rate;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.billLineItem.update({
+      where: { id: lineItemId },
+      data: {
+        quantity,
+        rate,
+        total,
+        ...(newCustomerId ? { customerId: newCustomerId } : {}),
+      },
+    });
+
+    const allLineItems = await tx.billLineItem.findMany({
+      where: { billId: lineItem.billId },
+      select: { total: true },
+    });
+    const grandTotal = allLineItems.reduce((sum, li) => sum + Number(li.total), 0);
+    await tx.bill.update({ where: { id: lineItem.billId }, data: { grandTotal } });
+  });
+
+  revalidatePath('/combined-bill');
+  revalidatePath('/bills');
+  revalidatePath('/ledger');
+  return { ok: true };
 }
