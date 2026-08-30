@@ -30,6 +30,7 @@ import {
   dayBefore,
   type MandiPeriod,
 } from '@/lib/balance';
+import { getCombinedRetailerCustomOrderIndex } from '@/lib/combined-bill-order';
 
 export type CombinedBillSource = {
   lineItemId: string;
@@ -243,7 +244,14 @@ export async function generateCombinedBill(
     )
   );
 
+  // Fixed business-specific display order (v1's CUSTOM_COMBINED_RETAILER_ORDER)
+  // takes priority; only retailers not in that list — new retailers added
+  // since — fall through to sorting by balance, then billed amount, then name.
   retailers.sort((a, b) => {
+    const orderA = getCombinedRetailerCustomOrderIndex(a.name);
+    const orderB = getCombinedRetailerCustomOrderIndex(b.name);
+    if (orderA !== orderB) return orderA - orderB;
+
     const byBalance = b.newBalance - a.newBalance;
     if (byBalance !== 0) return byBalance;
     const byBilled = b.weeklyTotal - a.weeklyTotal;
