@@ -6,8 +6,12 @@ import { PaymentRow } from '@/components/payments/payment-row';
 import { PaymentFilters } from '@/components/payments/payment-filters';
 import type { Prisma } from '@prisma/client';
 
+// Payment.date is a @db.Date column (no time/timezone — see lib/balance.ts),
+// round-tripped by Prisma as a UTC-midnight Date, so this must read it back
+// with UTC getters to fill the editable date input with the correct day
+// regardless of server timezone.
 function toDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 export default async function PaymentsPage({

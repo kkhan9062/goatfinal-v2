@@ -32,6 +32,11 @@ import {
 } from '@/lib/balance';
 import { getCombinedRetailerCustomOrderIndex } from '@/lib/combined-bill-order';
 
+// maxDuration for this action lives in app/combined-bill/page.tsx, not here —
+// a 'use server' file may only export async functions, so a route-segment
+// config const like `export const maxDuration` can't live in this file (it
+// silently breaks the whole module's exports under Turbopack).
+
 export type CombinedBillSource = {
   lineItemId: string;
   billId: string;
@@ -73,29 +78,46 @@ export type CombinedBillActionResult =
   | { ok: true; data: CombinedBillResult }
   | { ok: false; error: string };
 
-function dateKeyLocal(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+// Bill.date is a Postgres @db.Date column — a bare calendar date with no
+// time or timezone component. Prisma round-trips those as UTC-midnight Date
+// objects (confirmed live: a bill saved for "2026-08-24" reads back as
+// exactly 2026-08-24T00:00:00.000Z), so every date this file builds or reads
+// must stay in UTC terms — matching lib/supplier-cashflow.ts's
+// parseDateOnly/dateKey (the same bug class was found and fixed there
+// first) and lib/balance.ts's own UTC-only arithmetic. Local-time methods
+// (setHours, getDate, getFullYear) here only ever looked correct because
+// Vercel's serverless functions default to UTC — on a server actually east
+// of UTC (confirmed live on a local Asia/Calcutta dev machine), local
+// midnight is an earlier UTC instant, which silently pulled the day before
+// the requested range into every query. Caught by testing Combined Bill
+// against a known-good v1 PDF: a retailer's displayed "Current Mandi Total"
+// didn't match the sum of its own visible rows, because an extra day's
+// bills had been pulled in underneath the visible date columns.
+function dateKeyUTC(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
-function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+/** Parses a plain 'YYYY-MM-DD' date-input value as a UTC-midnight instant. */
+function parseDateOnlyUTC(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
 }
 
-function endOfDay(date: Date): Date {
+function endOfDayUTC(date: Date): Date {
   const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
+  d.setUTCHours(23, 59, 59, 999);
   return d;
 }
 
 function dateRange(start: Date, end: Date): string[] {
   const keys: string[] = [];
-  const cur = startOfDay(start);
-  const last = startOfDay(end);
+  const cur = new Date(start);
+  cur.setUTCHours(0, 0, 0, 0);
+  const last = new Date(end);
+  last.setUTCHours(0, 0, 0, 0);
   while (cur <= last) {
-    keys.push(dateKeyLocal(cur));
-    cur.setDate(cur.getDate() + 1);
+    keys.push(dateKeyUTC(cur));
+    cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return keys;
 }
@@ -114,8 +136,8 @@ export async function generateCombinedBill(
     return { ok: false, error: 'Please select start and end dates.' };
   }
 
-  const start = startOfDay(new Date(startDateStr));
-  const end = endOfDay(new Date(endDateStr));
+  const start = parseDateOnlyUTC(startDateStr);
+  const end = endOfDayUTC(parseDateOnlyUTC(endDateStr));
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     return { ok: false, error: 'Invalid date selected.' };
   }
@@ -123,8 +145,17 @@ export async function generateCombinedBill(
     return { ok: false, error: 'End date must be after start date.' };
   }
 
-  const [suppliers, lineItems] = await Promise.all([
+  const [suppliers, allCustomers, lineItems] = await Promise.all([
     prisma.supplier.findMany({ where: { id: { in: supplierIds } } }),
+    // v1 initializes retailerData for EVERY registered customer (CustomersAPI.getAll(),
+    // never filtered by supplier — see generateCombinedBill in combined-bill-module.js),
+    // then only filters down to active/owing ones at display time. Building the candidate
+    // set only from this period's line items (as v2 originally did) silently dropped any
+    // retailer who owes a carried-forward balance but didn't buy anything from these
+    // suppliers this specific period — confirmed live: a real period showed 42 retailers
+    // in v2 against v1's 100 for the identical date range, and every missing name was one
+    // with zero deliveries this period but a real outstanding balance.
+    prisma.customer.findMany({ select: { id: true, name: true } }),
     prisma.billLineItem.findMany({
       where: { bill: { supplierId: { in: supplierIds }, date: { gte: start, lte: end } } },
       include: { bill: true, customer: true },
@@ -157,7 +188,7 @@ export async function generateCombinedBill(
 
     const custId = li.customerId;
     namesByCustomer.set(custId, li.customer.name);
-    const dKey = dateKeyLocal(li.bill.date);
+    const dKey = dateKeyUTC(li.bill.date);
     const rateKey = rate.toFixed(2);
 
     byCustomer[custId] ??= {};
@@ -177,7 +208,14 @@ export async function generateCombinedBill(
     });
   }
 
-  const customerIds = Object.keys(byCustomer);
+  // Full candidate set, not just Object.keys(byCustomer) — see the comment on
+  // allCustomers above. A customer with no entries this period still needs a
+  // resolved balance so a carried-forward debt shows up, even though their
+  // dailyDeliveries bucket stays empty.
+  const customerIds = allCustomers.map((c) => c.id);
+  for (const c of allCustomers) {
+    if (!namesByCustomer.has(c.id)) namesByCustomer.set(c.id, c.name);
+  }
 
   const payments = await prisma.payment.findMany({
     where: { customerId: { in: customerIds }, date: { gte: start, lte: end } },
@@ -197,7 +235,8 @@ export async function generateCombinedBill(
   // correct and the actual fix, not just an optimization.
   const perRetailer = await Promise.all(
     customerIds.map(async (custId) => {
-      const weeklyTotal = Object.values(byCustomer[custId]).reduce(
+      const dailyDeliveries = byCustomer[custId] ?? {};
+      const weeklyTotal = Object.values(dailyDeliveries).reduce(
         (sum, dayBucket) => sum + Object.values(dayBucket).reduce((s, d) => s + d.total, 0),
         0
       );
@@ -211,7 +250,7 @@ export async function generateCombinedBill(
       const retailer: CombinedBillRetailer = {
         customerId: custId,
         name: namesByCustomer.get(custId) ?? 'Unknown',
-        dailyDeliveries: byCustomer[custId],
+        dailyDeliveries,
         weeklyTotal,
         previousBalance,
         displayPreviousBalance,
@@ -231,7 +270,7 @@ export async function generateCombinedBill(
 
   // Auto-save each retailer's closing balance for the next period to read —
   // upserted on (customerId, balanceDate), never duplicated.
-  const balanceDate = new Date(endDateStr);
+  const balanceDate = parseDateOnlyUTC(endDateStr);
   await Promise.all(
     checkpoints.map(({ customerId, balanceAmount }) =>
       saveRetailerBalanceCheckpoint(prisma, {

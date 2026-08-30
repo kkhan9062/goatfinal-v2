@@ -3,6 +3,14 @@ import { prisma } from '@/lib/prisma';
 import { Nav } from '@/components/nav';
 import { CombinedBillClient } from '@/components/combined-bill/combined-bill-client';
 
+// generateCombinedBill now resolves a balance for EVERY registered retailer
+// (not just ones who bought this period — see the allCustomers comment in
+// lib/actions/combined-bill.ts), which measured live at ~9.9s for a real
+// 100-retailer period. That's dangerously close to Vercel's 10s serverless
+// default with almost no margin as more retailers are added — this
+// route-segment config raises the ceiling for this page's Server Actions.
+export const maxDuration = 60;
+
 export default async function CombinedBillPage() {
   const user = await requireUser();
   const [suppliers, customers] = await Promise.all([

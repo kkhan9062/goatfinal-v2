@@ -3,10 +3,14 @@ import { requireUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { Nav } from '@/components/nav';
 import { DeleteBillButton } from '@/components/bills/delete-bill-button';
-import { getMandiCycleRange } from '@/lib/balance';
+import { getMandiCycleRange, getMandiPeriod } from '@/lib/balance';
 
+// getMandiCycleRange() returns UTC-midnight Date objects (Bill.date is a
+// @db.Date column with no timezone — see lib/balance.ts), so this must read
+// them back with UTC getters, not local ones, to group bills into the
+// correct mandi-period section regardless of server timezone.
 function dateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 function mandiPeriodLabel(period: 'tuesday_friday' | 'saturday_monday'): string {
@@ -36,7 +40,7 @@ export default async function BillsPage() {
     const key = dateKey(range.start);
     let group = groupByKey.get(key);
     if (!group) {
-      const period = range.start.getDay() >= 2 && range.start.getDay() <= 5 ? 'tuesday_friday' : 'saturday_monday';
+      const period = getMandiPeriod(range.start);
       group = { key, start: range.start, end: range.end, period, bills: [] };
       groupByKey.set(key, group);
       groups.push(group);

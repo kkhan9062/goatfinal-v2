@@ -15,7 +15,7 @@
 // ============================================================================
 
 import { prisma } from '@/lib/prisma';
-import { resolveRetailerBalance, getMandiCycleRange, dayBefore, type MandiPeriod } from '@/lib/balance';
+import { resolveRetailerBalance, getMandiCycleRange, getMandiPeriod, dayBefore, type MandiPeriod } from '@/lib/balance';
 
 export type MandiCycleRow = {
   period: MandiPeriod;
@@ -51,17 +51,21 @@ export async function getMandiWiseStatement(
   const from = new Date(fromStr);
   const to = new Date(toStr);
 
-  // Enumerate the distinct mandi cycles covering [from, to].
+  // Enumerate the distinct mandi cycles covering [from, to]. getMandiCycleRange
+  // returns UTC-midnight Date objects (Bill.date etc. are @db.Date columns
+  // with no timezone — see lib/balance.ts), so advancing the cursor must use
+  // UTC date methods too, not local ones, to land on the correct next day
+  // regardless of server timezone.
   const cycles: { start: Date; end: Date; period: MandiPeriod }[] = [];
   let cursor = new Date(from);
   while (cursor <= to) {
     const range = getMandiCycleRange(cursor);
-    const period: MandiPeriod = range.start.getDay() >= 2 && range.start.getDay() <= 5 ? 'tuesday_friday' : 'saturday_monday';
+    const period = getMandiPeriod(range.start);
     if (!cycles.find((c) => c.start.getTime() === range.start.getTime())) {
       cycles.push({ ...range, period });
     }
     cursor = new Date(range.end);
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
   const openingBalanceResolved = await resolveRetailerBalance(prisma, customerId, dayBefore(cycles[0]?.start ?? from));

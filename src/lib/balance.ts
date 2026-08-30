@@ -35,9 +35,24 @@ export type ResolvedBalance = {
 
 type PrismaLike = Pick<PrismaClient, 'retailerBalance' | 'billLineItem' | 'payment'>;
 
+// Every date this file compares against (Bill.date, Payment.date,
+// RetailerBalance.balanceDate) is a Postgres @db.Date column — a bare
+// calendar date with NO time or timezone component. Prisma round-trips
+// those as UTC-midnight JS Date objects (confirmed live: a bill saved for
+// "2026-08-24" reads back as exactly 2026-08-24T00:00:00.000Z), so every
+// date this module builds or mutates must stay in UTC terms, matching
+// lib/supplier-cashflow.ts's parseDateOnly/dateKey (the same bug class was
+// found and fixed there first). Using local-time methods (setHours,
+// getDay, setDate) here only happened to look correct because Vercel's
+// serverless functions default to UTC — on a server actually running east
+// of UTC (confirmed live on a local Asia/Calcutta dev machine), local
+// midnight is an earlier UTC instant, which silently pulled the day
+// before into every date-range query. Caught by testing Combined Bill
+// against a known-good v1 PDF and finding one retailer's displayed
+// "Current Mandi Total" didn't match the sum of its own visible rows.
 function endOfDay(date: Date): Date {
   const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
+  d.setUTCHours(23, 59, 59, 999);
   return d;
 }
 
@@ -143,43 +158,43 @@ export async function saveRetailerBalanceCheckpoint(
 
 /** Tuesday-Friday vs Saturday-Monday mandi cycle, same rule as v1. */
 export function getMandiPeriod(date: Date): MandiPeriod {
-  const day = date.getDay(); // 0=Sun..6=Sat
+  const day = date.getUTCDay(); // 0=Sun..6=Sat
   return day >= 2 && day <= 5 ? 'tuesday_friday' : 'saturday_monday';
 }
 
 /** Returns the {start, end} of the mandi cycle containing `date`, same rule as v1. */
 export function getMandiCycleRange(date: Date): { start: Date; end: Date } {
   const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay();
+  d.setUTCHours(0, 0, 0, 0);
+  const day = d.getUTCDay();
 
   const start = new Date(d);
   const end = new Date(d);
 
   if (day >= 2 && day <= 5) {
     // Tue-Fri cycle
-    start.setDate(d.getDate() - (day - 2));
-    end.setDate(d.getDate() + (5 - day));
+    start.setUTCDate(d.getUTCDate() - (day - 2));
+    end.setUTCDate(d.getUTCDate() + (5 - day));
   } else if (day === 6) {
     // Sat
-    end.setDate(d.getDate() + 2);
+    end.setUTCDate(d.getUTCDate() + 2);
   } else if (day === 0) {
     // Sun
-    start.setDate(d.getDate() - 1);
-    end.setDate(d.getDate() + 1);
+    start.setUTCDate(d.getUTCDate() - 1);
+    end.setUTCDate(d.getUTCDate() + 1);
   } else {
     // Mon
-    start.setDate(d.getDate() - 2);
+    start.setUTCDate(d.getUTCDate() - 2);
   }
 
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+  start.setUTCHours(0, 0, 0, 0);
+  end.setUTCHours(23, 59, 59, 999);
   return { start, end };
 }
 
 /** The date one calendar day before `date`, at end of day. */
 export function dayBefore(date: Date): Date {
   const d = new Date(date);
-  d.setDate(d.getDate() - 1);
+  d.setUTCDate(d.getUTCDate() - 1);
   return endOfDay(d);
 }

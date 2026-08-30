@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { resolveRetailerBalance, getMandiPeriod, getMandiCycleRange, dayBefore } from './balance';
 
-// Local-date-key formatter for test assertions. toISOString() converts to UTC
-// first, which silently rolls dates backward by a day in any timezone ahead
-// of UTC (e.g. IST) — the exact bug class already found once this session in
-// v1's scfv2DayBefore(). balance.ts itself never calls toISOString() (all
-// arithmetic stays in local time), so comparisons here must too.
+// UTC-date-key formatter for test assertions, matching balance.ts's own
+// convention: Bill.date/Payment.date/RetailerBalance.balanceDate are all
+// @db.Date columns (no time or timezone component), which Prisma round-trips
+// as UTC-midnight Date objects — so balance.ts does all of its arithmetic in
+// UTC (setUTCHours/getUTCDay/setUTCDate), not local time. Local-time methods
+// here only ever looked correct on a server running at UTC (Vercel's
+// default); on a real dev machine east of UTC (Asia/Calcutta), local
+// midnight is an earlier UTC instant, which silently rolled every date-range
+// query back by a day — caught live via Combined Bill, not by inspection.
 const key = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 
 // Lightweight in-memory stand-in for the three Prisma calls resolveRetailerBalance
 // makes, implementing just enough of the real query semantics (customerId match,
@@ -64,7 +68,12 @@ function mockDb(data: {
   };
 }
 
-const d = (s: string) => new Date(s + 'T00:00:00');
+// A bare 'YYYY-MM-DD' string is parsed as UTC midnight per the JS spec —
+// exactly matching how @db.Date columns round-trip through Prisma, and how
+// every date this app writes is constructed (new Date('YYYY-MM-DD')).
+// Appending a bare time-of-day (no 'Z'/offset) would instead parse as LOCAL
+// time, which is the wrong convention for these tests now.
+const d = (s: string) => new Date(s);
 
 describe('resolveRetailerBalance', () => {
   it('returns 0 when there is no checkpoint and no history at all', async () => {

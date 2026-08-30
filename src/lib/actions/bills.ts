@@ -29,13 +29,23 @@ export type CreateBillInput = z.input<typeof createBillSchema>;
 // within each calendar month, generated inside the same transaction as the
 // insert (see createBill) so two simultaneous bill creations can't collide
 // on the same number.
+//
+// `date` is a @db.Date column value (no time/timezone — Prisma round-trips
+// it as UTC midnight), so the month boundaries here must be computed in UTC
+// too. Building them with local getters/constructors (getFullYear/getMonth/
+// `new Date(y, m, 1)`) only happened to work because Vercel's serverless
+// functions default to UTC — on a server actually east of UTC, local
+// midnight on the 1st of a month is late on the LAST day of the PREVIOUS
+// month in UTC terms, which would silently misclassify every bill dated on
+// the 1st into the wrong month's numbering sequence (risking two bills
+// sharing a number). Same bug class as lib/balance.ts / lib/actions/combined-bill.ts.
 async function nextBillNumber(tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0], date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const prefix = `BILL-${year}${month}-`;
 
-  const monthStart = new Date(year, date.getMonth(), 1);
-  const monthEnd = new Date(year, date.getMonth() + 1, 1);
+  const monthStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  const monthEnd = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
 
   const count = await tx.bill.count({
     where: { date: { gte: monthStart, lt: monthEnd } },
