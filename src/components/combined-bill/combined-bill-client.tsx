@@ -4,7 +4,8 @@ import { useRef, useState, useTransition } from 'react';
 import { generateCombinedBill, type CombinedBillResult } from '@/lib/actions/combined-bill';
 import { getMandiCycleRange } from '@/lib/balance';
 import { RetailerCard } from '@/components/combined-bill/retailer-card';
-import { exportElementAsPdf, exportElementsAsZip } from '@/lib/pdf-export';
+import { exportHtmlAsPdf, exportElementsAsZip } from '@/lib/pdf-export';
+import { buildCombinedBillPrintHtml, COMBINED_BILL_PRINT_STYLES } from '@/lib/combined-bill-print';
 
 type Supplier = { id: string; name: string };
 type Customer = { id: string; name: string };
@@ -66,12 +67,39 @@ export function CombinedBillClient({
     });
   }
 
+  // Matches v1's printCombinedBill(): a fresh window with its own dense
+  // print-only layout, not whatever's currently on screen — printing the
+  // comfortable on-screen 2-column view as-is would waste far more paper
+  // than v1's tightly-packed 3-column output on a real bill run.
+  function handlePrint() {
+    if (!result) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow popups for this site to print.');
+      return;
+    }
+    const html = buildCombinedBillPrintHtml(result, summarized);
+    printWindow.document.write(
+      `<!DOCTYPE html><html><head><title>Combined Bill</title><style>${COMBINED_BILL_PRINT_STYLES}</style></head><body>${html}</body></html>`
+    );
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 250);
+  }
+
   async function handleDownloadPdf() {
-    if (!printAreaRef.current || !result) return;
+    if (!result) return;
     setPdfBusy(true);
     try {
-      await exportElementAsPdf(
-        printAreaRef.current,
+      // 'flex-columns', not the print path's CSS `column-count` — confirmed
+      // live that html2canvas-pro can't reliably capture CSS multi-column
+      // layout (threw "wrong PNG signature" on a malformed capture). Three
+      // explicit column divs render the same visual density and capture
+      // correctly.
+      const html = buildCombinedBillPrintHtml(result, summarized, 'flex-columns');
+      await exportHtmlAsPdf(
+        html,
+        COMBINED_BILL_PRINT_STYLES,
         `Combined_Bill_${result.startDate}_to_${result.endDate}.pdf`
       );
     } catch (err) {
@@ -174,7 +202,7 @@ export function CombinedBillClient({
             <>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={handlePrint}
                 className="rounded-md bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-1.5 transition-colors"
               >
                 🖨️ Print

@@ -162,6 +162,51 @@ export async function exportElementAsPdf(element: HTMLElement, filename: string)
   pdf.save(filename);
 }
 
+/**
+ * Renders a standalone HTML string (with its own `<style>` CSS, independent
+ * of whatever's on screen right now) to a PDF — for exports that need a
+ * layout distinct from the live page's, e.g. Combined Bill's dense
+ * print-specific 3-column layout (see lib/combined-bill-print.ts), which
+ * would waste paper if the on-screen 2-column view were captured as-is.
+ */
+export async function exportHtmlAsPdf(html: string, css: string, filename: string): Promise<void> {
+  // Off-screen positioning lives on `offscreenHost`, NOT on the element
+  // passed to exportElementAsPdf/captureCanvas — captureCanvas clones that
+  // element into its OWN fixed-positioned wrapper, and a `position: fixed`
+  // element stays fixed (relative to the viewport) even when re-parented
+  // into another fixed container, so it doesn't participate in that
+  // wrapper's layout at all. The clone rendered off-canvas-bounds with no
+  // visible content, producing an effectively empty capture — confirmed
+  // live as jsPDF's "wrong PNG signature" (a malformed/empty PNG data URL).
+  // `content` below has ordinary static positioning, so cloning it behaves
+  // like cloning any normal on-page element (e.g. BillDetailView's print
+  // area, which never hit this).
+  const offscreenHost = document.createElement('div');
+  offscreenHost.style.position = 'fixed';
+  offscreenHost.style.left = '-10000px';
+  offscreenHost.style.top = '0';
+
+  const content = document.createElement('div');
+  content.style.width = '794px'; // A4 width at 96dpi
+  content.style.background = '#ffffff';
+
+  const styleEl = document.createElement('style');
+  styleEl.textContent = css;
+  content.appendChild(styleEl);
+
+  const contentEl = document.createElement('div');
+  contentEl.innerHTML = html;
+  content.appendChild(contentEl);
+
+  offscreenHost.appendChild(content);
+  document.body.appendChild(offscreenHost);
+  try {
+    await exportElementAsPdf(content, filename);
+  } finally {
+    offscreenHost.remove();
+  }
+}
+
 /** Renders `element` to a compact, mobile-friendly PNG and downloads it. */
 export async function exportElementAsPng(element: HTMLElement, filename: string): Promise<void> {
   const canvas = await captureCanvas(element, { scale: 2, widthPx: COMPACT_CAPTURE_WIDTH_PX });
