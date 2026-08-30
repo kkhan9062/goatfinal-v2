@@ -186,37 +186,47 @@ export async function generateCombinedBill(
     paymentsByCustomer.set(p.customerId, (paymentsByCustomer.get(p.customerId) ?? 0) + Number(p.amount));
   }
 
-  const retailers: CombinedBillRetailer[] = [];
-  const checkpoints: { customerId: string; balanceAmount: number }[] = [];
+  // Resolving each retailer's balance in sequence here was the actual cause
+  // of "can't see all retailers" in production: with a real period's worth
+  // of retailers (36, in the case that surfaced this), the sequential
+  // `for` loop took 31.8 SECONDS end to end (measured live) — comfortably
+  // past Vercel's default 10s serverless function timeout, so the request
+  // simply failed with nothing rendered. Every retailer's balance is
+  // independent of every other's, so resolving them concurrently is both
+  // correct and the actual fix, not just an optimization.
+  const perRetailer = await Promise.all(
+    customerIds.map(async (custId) => {
+      const weeklyTotal = Object.values(byCustomer[custId]).reduce(
+        (sum, dayBucket) => sum + Object.values(dayBucket).reduce((s, d) => s + d.total, 0),
+        0
+      );
 
-  for (const custId of customerIds) {
-    const weeklyTotal = Object.values(byCustomer[custId]).reduce(
-      (sum, dayBucket) => sum + Object.values(dayBucket).reduce((s, d) => s + d.total, 0),
-      0
-    );
+      const resolved = await resolveRetailerBalance(prisma, custId, previousPeriodEnd);
+      const previousBalance = resolved.balance;
+      const paymentAmount = paymentsByCustomer.get(custId) ?? 0;
+      const newBalance = Math.max(0, previousBalance - paymentAmount + weeklyTotal);
+      const displayPreviousBalance = Math.max(0, previousBalance - paymentAmount);
 
-    const resolved = await resolveRetailerBalance(prisma, custId, previousPeriodEnd);
-    const previousBalance = resolved.balance;
-    const paymentAmount = paymentsByCustomer.get(custId) ?? 0;
-    const newBalance = Math.max(0, previousBalance - paymentAmount + weeklyTotal);
-    const displayPreviousBalance = Math.max(0, previousBalance - paymentAmount);
+      const retailer: CombinedBillRetailer = {
+        customerId: custId,
+        name: namesByCustomer.get(custId) ?? 'Unknown',
+        dailyDeliveries: byCustomer[custId],
+        weeklyTotal,
+        previousBalance,
+        displayPreviousBalance,
+        paymentAmount,
+        newBalance,
+      };
 
-    retailers.push({
-      customerId: custId,
-      name: namesByCustomer.get(custId) ?? 'Unknown',
-      dailyDeliveries: byCustomer[custId],
-      weeklyTotal,
-      previousBalance,
-      displayPreviousBalance,
-      paymentAmount,
-      newBalance,
-    });
+      const shouldPersist = weeklyTotal > 0 || previousBalance !== 0 || paymentAmount > 0;
+      return { retailer, checkpoint: shouldPersist ? { customerId: custId, balanceAmount: newBalance } : null };
+    })
+  );
 
-    const shouldPersist = weeklyTotal > 0 || previousBalance !== 0 || paymentAmount > 0;
-    if (shouldPersist) {
-      checkpoints.push({ customerId: custId, balanceAmount: newBalance });
-    }
-  }
+  const retailers: CombinedBillRetailer[] = perRetailer.map((r) => r.retailer);
+  const checkpoints = perRetailer
+    .map((r) => r.checkpoint)
+    .filter((c): c is { customerId: string; balanceAmount: number } => c !== null);
 
   // Auto-save each retailer's closing balance for the next period to read —
   // upserted on (customerId, balanceDate), never duplicated.

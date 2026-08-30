@@ -170,6 +170,35 @@ export async function exportElementAsPng(element: HTMLElement, filename: string)
 }
 
 /**
+ * Renders `element` to a PNG and copies it straight to the clipboard —
+ * v1's "📋 Copy SS" button on each Combined Bill retailer card, for pasting
+ * directly into WhatsApp without a save-then-attach round trip. Falls back
+ * to downloading the PNG (with `fallbackFilename`) on browsers/contexts
+ * where the Clipboard API's image write isn't available (e.g. no
+ * ClipboardItem support, or a permissions/HTTPS restriction) — matches v1's
+ * fallback exactly, so the button never just silently does nothing.
+ */
+export async function copyElementToClipboard(
+  element: HTMLElement,
+  fallbackFilename: string
+): Promise<'copied' | 'downloaded'> {
+  const canvas = await captureCanvas(element, { scale: 2, widthPx: COMPACT_CAPTURE_WIDTH_PX });
+  const blob = await canvasToBlob(canvas);
+
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      return 'copied';
+    } catch {
+      // fall through to download
+    }
+  }
+
+  triggerDownload(blob, fallbackFilename);
+  return 'downloaded';
+}
+
+/**
  * Renders each of `elements` to its own compact, mobile-friendly PNG and
  * downloads them together as one ZIP file — the "download all retailer
  * bills as images" feature.

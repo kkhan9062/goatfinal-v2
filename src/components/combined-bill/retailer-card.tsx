@@ -1,7 +1,9 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import type { CombinedBillRetailer } from '@/lib/actions/combined-bill';
 import { EditEntriesButton } from '@/components/combined-bill/edit-entries-button';
+import { copyElementToClipboard } from '@/lib/pdf-export';
 
 type Customer = { id: string; name: string };
 
@@ -42,6 +44,26 @@ export function RetailerCard({
   customers,
   onEntriesSaved,
 }: Props) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'downloaded' | 'error'>('idle');
+
+  async function handleCopyScreenshot() {
+    if (!cardRef.current) return;
+    setCopyState('copying');
+    try {
+      const result = await copyElementToClipboard(
+        cardRef.current,
+        `${retailer.name.replace(/[^a-zA-Z0-9 _-]/g, '').replace(/\s+/g, '_')}.png`
+      );
+      setCopyState(result);
+    } catch (err) {
+      console.error('Failed to copy retailer bill screenshot:', err);
+      setCopyState('error');
+    } finally {
+      setTimeout(() => setCopyState('idle'), 2000);
+    }
+  }
+
   const rows: { label: string; quantity: number; rate: number; total: number }[] = [];
 
   if (summarized) {
@@ -77,10 +99,27 @@ export function RetailerCard({
 
   return (
     <div>
-      <div data-pdf-ignore className="mb-1">
+      <div data-pdf-ignore className="mb-1 flex items-center gap-2">
         <EditEntriesButton retailer={retailer} customers={customers} onSaved={onEntriesSaved} />
+        <button
+          type="button"
+          onClick={handleCopyScreenshot}
+          disabled={copyState === 'copying'}
+          className="text-xs rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 disabled:opacity-60"
+        >
+          {copyState === 'copying'
+            ? '⏳ Copying…'
+            : copyState === 'copied'
+              ? '✅ Copied!'
+              : copyState === 'downloaded'
+                ? '⬇️ Downloaded'
+                : copyState === 'error'
+                  ? '❌ Failed'
+                  : '📋 Copy SS'}
+        </button>
       </div>
       <div
+        ref={cardRef}
         data-retailer-card={retailer.customerId}
         data-retailer-name={retailer.name}
         style={{

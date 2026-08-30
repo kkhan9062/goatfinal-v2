@@ -77,6 +77,38 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
     }, 0);
   }, [rowsByOrgan]);
 
+  // Direct port of v1's updateDistributionSummary() (customer-bill-form-module.js):
+  // a live "Received / Distributed / Remaining" check per organ against Total
+  // Goats Received, so a mistyped quantity (or a forgotten retailer row) is
+  // visible while entering the bill, not after saving it. Kaleji/Vajdi also
+  // count the "sold together" quantity bundled into Mundi rows toward their
+  // own distributed total, since that meat leaves with the animal even
+  // though it has no separate line entry (see includesKaleji/includesVajdi).
+  const distributionSummary = useMemo(() => {
+    const totalReceived = parseFloat(totalGoatsReceived) || 0;
+    const bundleExtra = (organ: 'kaleji' | 'vajdi') =>
+      rowsByOrgan.mundi.reduce((sum, r) => {
+        const qty = parseFloat(r.quantity) || 0;
+        if (qty <= 0) return sum;
+        if (organ === 'kaleji' && r.includesKaleji) return sum + qty;
+        if (organ === 'vajdi' && r.includesVajdi) return sum + qty;
+        return sum;
+      }, 0);
+
+    const byOrgan = {} as Record<OrganKey, { distributed: number; remaining: number; totalAmount: number }>;
+    for (const { key } of ORGANS) {
+      let distributed = rowsByOrgan[key].reduce((s, r) => s + (parseFloat(r.quantity) || 0), 0);
+      const totalAmount = rowsByOrgan[key].reduce(
+        (s, r) => s + (parseFloat(r.quantity) || 0) * (parseFloat(r.rate) || 0),
+        0
+      );
+      if (key === 'kaleji') distributed += bundleExtra('kaleji');
+      if (key === 'vajdi') distributed += bundleExtra('vajdi');
+      byOrgan[key] = { distributed, remaining: totalReceived - distributed, totalAmount };
+    }
+    return { totalReceived, byOrgan };
+  }, [rowsByOrgan, totalGoatsReceived]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -158,7 +190,20 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
         </div>
       </div>
 
-      {ORGANS.map(({ key, label }) => (
+      {ORGANS.map(({ key, label }) => {
+        const summary = distributionSummary.byOrgan[key];
+        const showSummary = distributionSummary.totalReceived > 0 || summary.distributed > 0;
+        const isComplete = summary.remaining === 0 && summary.distributed > 0;
+        const isOver = summary.remaining < 0;
+        const summaryTone = isComplete
+          ? { border: 'border-emerald-700', bg: 'bg-emerald-950/40', text: 'text-emerald-400' }
+          : isOver
+            ? { border: 'border-red-700', bg: 'bg-red-950/40', text: 'text-red-400' }
+            : summary.remaining > 0
+              ? { border: 'border-amber-700', bg: 'bg-amber-950/40', text: 'text-amber-400' }
+              : { border: 'border-slate-700', bg: 'bg-slate-800/60', text: 'text-slate-300' };
+
+        return (
         <div key={key} className="border border-slate-800 rounded-lg overflow-hidden">
           <div className="bg-slate-900 px-4 py-2 flex items-center justify-between">
             <h3 className="font-medium text-sm">{label}</h3>
@@ -170,6 +215,33 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
               + Add Customer
             </button>
           </div>
+          {showSummary && (
+            <div
+              className={`border-l-4 ${summaryTone.border} ${summaryTone.bg} px-4 py-1.5 text-xs flex flex-wrap gap-x-4 gap-y-0.5`}
+            >
+              <span className="text-slate-400">
+                Received: <span className="text-slate-200">{distributionSummary.totalReceived}</span>
+              </span>
+              <span className="text-slate-400">
+                Distributed: <span className="text-slate-200">{summary.distributed}</span>
+              </span>
+              <span className={summaryTone.text}>
+                Remaining:{' '}
+                <strong>
+                  {summary.remaining}
+                  {isComplete ? ' ✓' : isOver ? ' ⚠' : ''}
+                </strong>
+              </span>
+              {summary.totalAmount > 0 && (
+                <span className="text-slate-400">
+                  Amount:{' '}
+                  <span className="text-slate-200">
+                    ₹{summary.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
           {rowsByOrgan[key].length > 0 && (
             <table className="w-full text-sm">
               <thead className="text-left text-slate-500 text-xs">
@@ -267,7 +339,8 @@ export function NewBillForm({ suppliers, customers }: { suppliers: Supplier[]; c
             </table>
           )}
         </div>
-      ))}
+        );
+      })}
 
       <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-4 py-3">
         <span className="text-slate-400 text-sm">Grand Total</span>
